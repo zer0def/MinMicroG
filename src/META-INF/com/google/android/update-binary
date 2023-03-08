@@ -12,6 +12,7 @@ exec 1>&2;
 
 outfd="/proc/self/fd/$2";
 zipfile="$3";
+instsub="/system";
 
 ps | grep zygote | grep -v grep >/dev/null && bootmode=true || bootmode=false;
 $bootmode || ps -A 2>/dev/null | grep zygote | grep -v grep >/dev/null && bootmode=true;
@@ -56,6 +57,8 @@ cleanup() {
     for part in $umountparts; do
       umount "$part";
     done;
+    umount /system_ext;
+    umount /product;
   }
   sync;
 }
@@ -135,6 +138,8 @@ $bootmode || {
     done;
   fi;
   mount /data;
+  grep -q " $(readlink -f /product) " /proc/mounts 2>/dev/null && mount -o rw,remount /product || mount -o rw /product;
+  grep -q " $(readlink -f /system_ext) " /proc/mounts 2>/dev/null && mount -o rw,remount /system_ext || mount -o rw /system_ext;
   umountparts="$umountparts /data";
 }
 [ -e "/system/build.prop" ] && { sysroot="/"; sysrootpart="/system"; };
@@ -157,6 +162,8 @@ $bootmode || {
     log "Shell path set to $PATH";
   }
 }
+$bootmode || instsub="$(df -Pk /system_root /system /system_ext /product | grep -vE '^Filesystem|/$' | sort -nrk 4 | awk '{print $NF}' | sed 's/system_root/system/' | sort -u | head -n1)"
+$bootmode || echo "$instsub" | grep -qE '^/system' || instsub="/system$instsub"
 
 for bin in chcon chmod chown cp cut df du echo find grep head mkdir mount ps rm sed tail touch tr umount unzip; do
   command -v "$bin" >/dev/null || abort "No $bin available";
@@ -521,36 +528,36 @@ if [ "$action" = "installation" ]; then
   ui_print "Doing size checks...";
   packsizem="$(( $(sizecheck_pack) / 1024 + 1 ))";
   log "Pack size is $packsizem";
-  diskfreem="$(( $(df -Pk "$rootpart" | tail -n 1 | select_word 4) / 1024 ))";
+  diskfreem="$(( $(df -Pk "$rootpart$instsub" | tail -n 1 | select_word 4) / 1024 ))";
   log "Free space in $rootpart is $diskfreem";
-  [ "$diskfreem" -gt "$packsizem" ] || abort "Not enough free space in your $rootpart!";
+  [ "$diskfreem" -gt "$packsizem" ] || abort "Not enough free space in your $rootpart$instsub!";
 
   ui_print " ";
-  ui_print "Installing $modname to $root...";
+  ui_print "Installing $modname to $instsub...";
   mkdir -p "$root";
 
   log " ";
   log "Installing generic stuff";
   for thing in $stuff; do
-    [ "$thing" ] && install_dest "$filedir/$thing" "$root/$thing";
+    [ "$thing" ] && install_dest "$filedir/$thing" "$root/$(echo $thing | sed "s#/system#$instsub#")";
   done;
 
   log " ";
   log "Installing Arch dependant stuff for $arch";
   for thing in $stuff_arch; do
-    [ "$thing" ] && install_dest "$filedir/$(dirname "$thing")/*-$arch-*/$(basename "$thing")" "$root/$thing";
+    [ "$thing" ] && install_dest "$filedir/$(dirname "$thing")/*-$arch-*/$(basename "$thing")" "$root/$(echo $thing | sed "s#/system#$instsub#")";
   done;
 
   log " ";
   log "Installing SDK dependant stuff for SDK $sdk";
   for thing in $stuff_sdk; do
-    [ "$thing" ] && install_dest "$filedir/$(dirname "$thing")/*-$sdk-*/$(basename "$thing")" "$root/$thing";
+    [ "$thing" ] && install_dest "$filedir/$(dirname "$thing")/*-$sdk-*/$(basename "$thing")" "$root/$(echo $thing | sed "s#/system#$instsub#")";
   done;
 
   log " ";
   log "Installing Arch and SDK dependant stuff for $arch and SDK $sdk";
   for thing in $stuff_arch_sdk; do
-    [ "$thing" ] && install_dest "$filedir/$(dirname "$thing")/*-$arch-*-$sdk-*/$(basename "$thing")" "$root/$thing";
+    [ "$thing" ] && install_dest "$filedir/$(dirname "$thing")/*-$arch-*-$sdk-*/$(basename "$thing")" "$root/$(echo $thing | sed "s#/system#$instsub#")";
   done;
 
   log " ";
@@ -578,13 +585,13 @@ if [ "$action" = "installation" ]; then
   for thing in $stuff_perm; do
     case "$thing" in
       */bin*|*/xbin*)
-        perm 0 2000 0755 0777 "$root/$thing";
+        perm 0 2000 0755 0777 "$root/$(echo $thing | sed "s#/system#$instsub#")";
       ;;
       *)
-        perm 0 0 0755 0644 "$root/$thing";
+        perm 0 0 0755 0644 "$root/$(echo $thing | sed "s#/system#$instsub#")";
       ;;
     esac;
-    chcon -hR 'u:object_r:system_file:s0' "$root/$thing";
+    chcon -hR 'u:object_r:system_file:s0' "$root/$(echo $thing | sed "s#/system#$instsub#")";
   done;
 
   post_install_actions;
