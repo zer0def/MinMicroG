@@ -15,7 +15,7 @@ zipfile="$3";
 
 ps | grep zygote | grep -v grep >/dev/null && bootmode=true || bootmode=false;
 $bootmode || ps -A 2>/dev/null | grep zygote | grep -v grep >/dev/null && bootmode=true;
-[ "$BOOTMODE" = true ] && bootmode=true;
+${BOOTMODE:-false} && bootmode=true;
 
 if $bootmode; then
   ui_print() {
@@ -162,8 +162,7 @@ for bin in chcon chmod chown cp cut df du echo find grep head mkdir mount ps rm 
   command -v "$bin" >/dev/null || abort "No $bin available";
 done;
 
-$bootmode && filedir="/dev/tmp/$modname" || filedir="/tmp/$modname";
-[ "$TMPDIR" ] && filedir="$TMPDIR/$modname";
+$bootmode && filedir="${TMPDIR:-/dev/tmp}/$modname" || filedir="/tmp/$modname";
 tmplibdir="$filedir/tmplibdir";
 
 $bootmode && forcesys=no;
@@ -470,16 +469,15 @@ fi;
 
 ui_print " ";
 ui_print "Mounting...";
-if $bootmode && [ "$KSU" = true ]; then
-  rootpart="/data";
-  modulesdir="$(dirname "$MODPATH")";
-  root="$MODPATH";
-  magisk=yes;
-elif [ -e "/data/adb/magisk" ] && [ "$forcesys" != "yes" ]; then
-  rootpart="/data";
-  $bootmode && modulesdir="$rootpart/adb/modules_update" || modulesdir="$rootpart/adb/modules";
-  root="$modulesdir/$modname";
-  magisk=yes;
+if [ "$forcesys" != "yes" ] && $bootmode; then
+  rootpart="/data"; magisk=yes;
+  if ${KSU:-false} || [ -e "/data/adb/ksu" ]; then
+    modulesdir="${MODPATH%/*}";
+    root="${MODPATH}";
+  elif [ -e "/data/adb/magisk" ]; then
+    modulesdir="$rootpart/adb/modules_update";
+    root="$modulesdir/$modname";
+  fi
   log "Using $modulesdir";
   [ -d "$modulesdir" ] || {
     mkdir -p "$modulesdir";
